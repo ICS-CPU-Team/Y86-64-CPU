@@ -23,7 +23,7 @@ class Simulator:
         ]
 
         # 条件码: ZF(零标志),SF(符号标志),OF(溢出标志)
-        self.cc = {"ZF": 0, "SF": 0, "OF": 0}
+        self.cc = {"ZF": 1, "SF": 0, "OF": 0}           # ZF初始设为1
 
         # 程序计数器
         self.pc = 0
@@ -179,25 +179,6 @@ class Simulator:
         return valA, valB
 
 
-    # ==================== 成员A负责：条件判断辅助函数 ====================
-
-    ## 检查条件码是否满足跳转的条件
-    def check_condition(self, ifun):
-        if ifun == 0:                              # jmp:无条件
-            return True
-        elif ifun == 1:                            # jle:(<=) (SF^OF)|ZF
-            return (self.cc["SF"] ^ self.cc["OF"]) | self.cc["ZF"]
-        elif ifun == 2:                            # jl(<): SF^OF
-            return self.cc["SF"] ^ self.cc["OF"]
-        elif ifun == 3:                            # je(==): ZF
-            return self.cc["ZF"]
-        elif ifun == 4:                            # jne(!=): ~ZF
-            return not self.cc["ZF"]
-        elif ifun == 5:                            # jge(>=): ~(SF^OF)
-            return not (self.cc["SF"] ^ self.cc["OF"])
-        elif ifun == 6:                            # jg(>): ~(SF^OF)&~ZF
-            return (not (self.cc["SF"] ^ self.cc["OF"])) and (not self.cc["ZF"])
-        return False
 
 
     # ==================== 成员B负责：指令分发逻辑 ====================
@@ -206,9 +187,9 @@ class Simulator:
             return
         icode, ifun, rA, rB, valC, valP=self.fetch()
         if icode == 0:
-            self.stat=2
+            self.exec_halt()                       # 统一格式
         elif icode == 1:
-            self.pc=valP
+            self.exec_nop(valP)                         # 统一格式
         elif icode == 2:
             self.exec_rrmovq(ifun, rA, rB, valP)
         elif icode == 3:
@@ -224,7 +205,7 @@ class Simulator:
         elif icode == 8:
             self.exec_call(valC, valP)
         elif icode == 9:
-            self.exec_ret(valP)
+            self.exec_ret()         #用不到valP，前后保持一致
         elif icode == 0xA:          # pushq
             self.exec_pushq(rA, valP)
         elif icode == 0xB:          # popq
@@ -284,7 +265,7 @@ class Simulator:
         res_u = self.to_unsigned(res)
         self.update_cc(res_u, a, b, op)# 更新条件码
 
-        self.regs[rB] = res_u
+        self.regs[self.reg_names[rB]] = res_u       #修改错误，rB是数值，得通过reg_names获得其字符串
         self.pc = valP
         
     # ==================== 成员B负责：数据传送指令 ====================
@@ -339,7 +320,25 @@ class Simulator:
         self.regs[regA] = self.to_unsigned(val)
         self.pc = valP
 
-    # ==================== 成员C负责：控制流指令 ====================
+    # ==================== 成员A负责：jxx ====================
+
+    def check_condition(self, ifun):
+        if ifun == 0:                              # jmp:无条件
+            return True
+        elif ifun == 1:                            # jle:(<=) (SF^OF)|ZF
+            return (self.cc["SF"] ^ self.cc["OF"]) | self.cc["ZF"]
+        elif ifun == 2:                            # jl(<): SF^OF
+            return self.cc["SF"] ^ self.cc["OF"]
+        elif ifun == 3:                            # je(==): ZF
+            return self.cc["ZF"]
+        elif ifun == 4:                            # jne(!=): ~ZF
+            return not self.cc["ZF"]
+        elif ifun == 5:                            # jge(>=): ~(SF^OF)
+            return not (self.cc["SF"] ^ self.cc["OF"])
+        elif ifun == 6:                            # jg(>): ~(SF^OF)&~ZF
+            return (not (self.cc["SF"] ^ self.cc["OF"])) and (not self.cc["ZF"])
+        return False
+
     def exec_jxx(self, ifun, valC, valP):           # 成员A完成的
         if_jump = self.check_condition(ifun)
 
@@ -347,13 +346,14 @@ class Simulator:
             self.pc = valC
         else:
             self.pc = valP
+    # ==================== 成员C负责：控制流指令 ====================
 
     def exec_call(self, valC, valP):
         self.regs["rsp"] -= 8
         self.write_memory(self.regs["rsp"], valP, 8)
         self.pc = valC
 
-    def exec_ret(self, valP):
+    def exec_ret(self):
         self.pc = self.read_memory(self.regs["rsp"], 8)             #用不到valP，可删除     
         self.regs["rsp"] += 8
 
@@ -362,7 +362,9 @@ class Simulator:
         val = self.regs[self.reg_names[rA]]
         self.regs["rsp"] -= 8
         self.write_memory(self.regs["rsp"], val, 8)
-        self.pc = valP
+        if self.stat == 1:                               # 注意到prog10出错，当前面程序已经出错，stat != 1时，不应该继续函数
+            self.pc = valP
+       
 
     def exec_popq(self, rA, valP):
         val = self.read_memory(self.regs["rsp"], 8) 
@@ -379,11 +381,23 @@ class Simulator:
 
     # ==================== 成员C负责：状态输出 ====================
     def get_state(self):
+        memory_set = set((k // 8) * 8 for k in self.memory.keys())  #注意到poptest测试中memory出现大量错误，
+        memory_output = {}
+        for addr in memory_set:
+            val = self.read_memory(addr, 8)
+            val = self.to_signed(val)                               #注意到正确答案中都是有符号数，而直接输出存在无符号数
+            if val != 0:
+                memory_output[str(addr)] = val
+    
+        regs_signed = {}                                            #以j-cc测试为例，注意到reg错误答案有一个巨大的无符号数
+        for reg_name, reg_val in self.regs.items():
+            regs_signed[reg_name] = self.to_signed(reg_val)
+
         return {
-            "CC": self.cc,
-            "MEM": self.memory,
+            "CC": self.cc.copy(),
+            "MEM": memory_output,
             "PC": self.pc,
-            "REG": self.regs,
+            "REG": regs_signed,
             "STAT": self.stat
         }
 

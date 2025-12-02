@@ -233,6 +233,7 @@ class Simulator:
         # 非法指令
             self.stat = 4
         
+        
 
     # ==================== 成员B负责：算术逻辑指令 ====================
     def update_cc(self, result_u, a_s, b_s, op):

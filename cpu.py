@@ -225,6 +225,13 @@ class Simulator:
             self.exec_call(valC, valP)
         elif icode == 9:
             self.exec_ret(valP)
+        elif icode == 0xA:          # pushq
+            self.exec_pushq(rA, valP)
+        elif icode == 0xB:          # popq
+            self.exec_popq(rA, valP)
+        else:
+        # 非法指令
+            self.stat = 4
         
 
     # ==================== 成员B负责：算术逻辑指令 ====================
@@ -315,6 +322,7 @@ class Simulator:
 
         self.write_memory(addr, valA, 8)
         self.pc = valP
+        
     def exec_mrmovq(self, rA, rB, valC, valP):
         regA = self.reg_names[rA]
         regB = self.reg_names[rB]

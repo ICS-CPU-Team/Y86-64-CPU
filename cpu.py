@@ -166,7 +166,7 @@ class Simulator:
     # ==================== 成员A负责：译码辅助函数 ====================
 
     ## 译码阶段：获取寄存器的值
-    def decode_registers(self, icode, rA, rB):
+    def decode_registers(self, rA, rB):
         valA = 0
         valB = 0
         
@@ -202,24 +202,142 @@ class Simulator:
 
     # ==================== 成员B负责：指令分发逻辑 ====================
     def step(self):
-        pass
+        if self.stat!=1:
+            return
+        icode, ifun, rA, rB, valC, valP=self.fetch()
+        if icode == 0:
+            self.stat=2
+        elif icode == 1:
+            self.pc=valP
+        elif icode == 2:
+            self.exec_rrmovq(ifun, rA, rB, valP)
+        elif icode == 3:
+            self.exec_irmovq(rB, valC, valP)
+        elif icode == 4:
+            self.exec_rmmovq(rA, rB, valC, valP)
+        elif icode == 5:
+            self.exec_mrmovq(rA, rB, valC, valP)
+        elif icode == 6:
+            self.exec_opq(ifun, rA, rB, valP)
+        elif icode == 7:
+            self.exec_jxx(ifun, valC, valP)
+        elif icode == 8:
+            self.exec_call(valC, valP)
+        elif icode == 9:
+            self.exec_ret(valP)
+        elif icode == 0xA:          # pushq
+            self.exec_pushq(rA, valP)
+        elif icode == 0xB:          # popq
+            self.exec_popq(rA, valP)
+        else:
+        # 非法指令
+            self.stat = 4
+        
+        
 
     # ==================== 成员B负责：算术逻辑指令 ====================
-    def exec_opq(self, ifun, rA, rB, valP):
-        pass
+    def update_cc(self, result_u, a_s, b_s, op):
+        """
+        更新条件码：
+        - result_u：64bit 无符号运算结果
+        - a_s / b_s：参与运算的两个有符号数
+        - op: 'add' / 'sub' / 'and' / 'xor'
+        """
+        r = self.to_signed(result_u)
+        self.cc["ZF"] = 1 if r == 0 else 0
+        self.cc["SF"] = 1 if r < 0 else 0
 
+        of = 0
+        if op == "add":             # a + b 溢出：同号相加结果异号
+            of = int((a_s > 0 and b_s > 0 and r < 0) or
+                     (a_s < 0 and b_s < 0 and r >= 0))
+        elif op == "sub":           # subq：rB <- rB - rA = b - a
+            diff = r
+            of = int((b_s > 0 and a_s < 0 and diff < 0) or
+                     (b_s < 0 and a_s > 0 and diff >= 0))
+        else:
+            of = 0
+        self.cc["OF"] = of
+    
+    
+    def exec_opq(self, ifun, rA, rB, valP):
+        valA, valB = self.decode_registers(rA, rB)
+        a = self.to_signed(valA)
+        b = self.to_signed(valB)
+        
+        if ifun == 0x0:      # addq
+            res = a + b
+            op = "add"
+        elif ifun == 0x1:    # subq: rB <- rB - rA
+            res = b - a
+            op = "sub"
+        elif ifun == 0x2:    # andq
+            res = a & b
+            op = "and"
+        elif ifun == 0x3:    # xorq
+            res = a ^ b
+            op = "xor"
+        else:
+            self.stat = 4
+            return
+        
+        res_u = self.to_unsigned(res)
+        self.update_cc(res_u, a, b, op)# 更新条件码
+
+        self.regs[rB] = res_u
+        self.pc = valP
+        
     # ==================== 成员B负责：数据传送指令 ====================
     def exec_rrmovq(self, ifun, rA, rB, valP):
-        pass
+        regA=self.reg_names[rA]
+        regB=self.reg_names[rB]
+        if regA is None or regB is None:
+            self.stat = 4
+            return
+        if self.check_condition(ifun):
+            self.regs[regB] = self.to_unsigned(self.regs[regA])
+
+        self.pc = valP
+        
 
     def exec_irmovq(self, rB, valC, valP):
-        pass
+        regB = self.reg_names[rB]
+        if regB is None:
+            self.stat = 4
+            return
+
+        self.regs[regB] = self.to_unsigned(valC)        # 立即数 -> 寄存器，不影响条件码
+        self.pc = valP
 
     def exec_rmmovq(self, rA, rB, valC, valP):
-        pass
+        regA = self.reg_names[rA]
+        regB = self.reg_names[rB]
+        if regA is None or regB is None:
+            self.stat = 4
+            return
 
+        valA = self.regs[regA]
+        base = self.to_signed(self.regs[regB])
+        offset = self.to_signed(valC)
+        addr = base + offset
+
+        self.write_memory(addr, valA, 8)
+        self.pc = valP
+        
     def exec_mrmovq(self, rA, rB, valC, valP):
-        pass
+        regA = self.reg_names[rA]
+        regB = self.reg_names[rB]
+        if regA is None or regB is None:
+            self.stat = 4
+            return
+
+        base = self.to_signed(self.regs[regB])
+        offset = self.to_signed(valC)
+        addr = base + offset
+
+        val = self.read_memory(addr, 8)
+        self.regs[regA] = self.to_unsigned(val)
+        self.pc = valP
 
     # ==================== 成员C负责：控制流指令 ====================
     def exec_jxx(self, ifun, valC, valP):           # 成员A完成的

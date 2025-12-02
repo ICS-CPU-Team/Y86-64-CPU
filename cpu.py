@@ -222,36 +222,61 @@ class Simulator:
         pass
 
     # ==================== 成员C负责：控制流指令 ====================
-    def exec_jxx(self, ifun, valC, valP):
-        pass
+    def exec_jxx(self, ifun, valC, valP):           # 成员A完成的
+        if_jump = self.check_condition(ifun)
+
+        if if_jump:
+            self.pc = valC
+        else:
+            self.pc = valP
 
     def exec_call(self, valC, valP):
-        pass
+        self.regs["rsp"] -= 8
+        self.write_memory(self.regs["rsp"], valP, 8)
+        self.pc = valC
 
     def exec_ret(self, valP):
-        pass
+        self.pc = self.read_memory(self.regs["rsp"], 8)             #用不到valP，可删除     
+        self.regs["rsp"] += 8
 
     # ==================== 成员C负责：栈操作指令 ====================
     def exec_pushq(self, rA, valP):
-        pass
+        val = self.regs[self.reg_names[rA]]
+        self.regs["rsp"] -= 8
+        self.write_memory(self.regs["rsp"], val, 8)
+        self.pc = valP
 
     def exec_popq(self, rA, valP):
-        pass
+        val = self.read_memory(self.regs["rsp"], 8) 
+        self.regs["rsp"] += 8
+        self.regs[self.reg_names[rA]] = val
+        self.pc = valP
 
     # ==================== 成员C负责：其他指令 ====================
     def exec_halt(self):
-        pass
+        self.stat = 2;
 
     def exec_nop(self, valP):
-        pass
+        self.pc = valP
 
     # ==================== 成员C负责：状态输出 ====================
     def get_state(self):
-        pass
+        return {
+            "CC": self.cc,
+            "MEM": self.memory,
+            "PC": self.pc,
+            "REG": self.regs,
+            "STAT": self.stat
+        }
 
     # ==================== 成员C负责：主控制流程 ====================
     def run(self):
-        pass
+        self.load_program()
+        while self.stat == 1:
+            self.step()
+            self.history.append(self.get_state())
+        
+        print(json.dumps(self.history))
 
 
 if __name__ == "__main__":

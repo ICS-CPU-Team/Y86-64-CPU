@@ -374,7 +374,7 @@ class Simulator:
 
     # ==================== 成员C负责：其他指令 ====================
     def exec_halt(self):
-        self.stat = 2;
+        self.stat = 2
 
     def exec_nop(self, valP):
         self.pc = valP

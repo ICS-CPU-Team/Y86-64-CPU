@@ -38,7 +38,7 @@ class Simulator:
         self.history = []
 
 
-    # ==================== 成员A负责：工具函数(内存那块用到了) ====================
+    # ==================== 成员A负责：工具函数 ====================
 
     ## 将64位无符号整数转换成有符号整数
     def to_signed(self, val):
@@ -108,7 +108,7 @@ class Simulator:
                 addr += 1
 
 
-    # ==================== 成员A负责：取指阶段 ====================
+# ==================== 成员A负责：取指阶段 ====================
 
     ## 从 PC 指向的内存位置读取指令，返回icode(4bit指令码),ifun(4bit功能码),rA(源寄存器),rB(目的寄存器),valC(指令携带的常数),valP(下一条指令的地址)
     def fetch(self):
@@ -128,37 +128,21 @@ class Simulator:
         # 根据指令码解析后续字节
         if icode in [0, 1, 9]:                      # halt, nop, ret
             pass                                    # valP保持self.pc + 1即可
-        elif icode in [2, 6, 7]:                    # rrmovq/cmovxx, opq, jxx
-            if icode in [2, 6]:                     # 需要读取寄存器
-                reg_byte = self.memory.get(valP, 0) 
-                rA = (reg_byte >> 4) & 0xF          # 高4位
-                rB = reg_byte & 0xF                 # 低4位
-                valP += 1
-            if icode == 7:                          # jxx需要8字节目标地址
-                valC = self.read_memory(valP, 8)
-                valP += 8
-        elif icode == 3:                            # irmovq
-            reg_byte = self.memory.get(valP, 0)
-            rA = (reg_byte >> 4) & 0xF
-            rB = reg_byte & 0xF
+        elif icode in [2, 6, 0xA, 0xB]:             # cmovxx, opq, pushq, popq需要读取寄存器
+            reg_byte = self.memory.get(valP, 0) 
+            rA = (reg_byte >> 4) & 0xF              # 高4位
+            rB = reg_byte & 0xF                     # 低4位
             valP += 1
-            valC = self.read_memory(valP, 8)
-            valP += 8
-        elif icode in [4, 5]:                       # rmmovq, mrmovq
+        elif icode in [3, 4, 5]:                    # irmovq, rmmovq, mrmovq
             reg_byte = self.memory.get(valP, 0)
             rA = (reg_byte >> 4) & 0xF
             rB = reg_byte & 0xF
             valP += 1
             valC = self.read_memory(valP, 8)        # 读取8字节偏移量
             valP += 8
-        elif icode == 8:                            # call
+        elif icode in [7, 8]:                       # jxx, call 需要8字节目标地址
             valC = self.read_memory(valP, 8)
             valP += 8
-        elif icode in [0xA, 0xB]:                   # pushq, popq
-            reg_byte = self.memory.get(valP, 0)
-            rA = (reg_byte >> 4) & 0xF
-            rB = reg_byte & 0xF
-            valP += 1
         
         return icode, ifun, rA, rB, valC, valP
 
@@ -339,7 +323,7 @@ class Simulator:
             return (not (self.cc["SF"] ^ self.cc["OF"])) and (not self.cc["ZF"])
         return False
 
-    def exec_jxx(self, ifun, valC, valP):           # 成员A完成的
+    def exec_jxx(self, ifun, valC, valP):          # 成员A完成的
         if_jump = self.check_condition(ifun)
 
         if if_jump:

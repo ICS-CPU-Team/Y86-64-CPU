@@ -354,7 +354,8 @@ class Simulator:
         val = self.read_memory(self.regs["rsp"], 8) 
         self.regs["rsp"] += 8
         self.regs[self.reg_names[rA]] = val
-        self.pc = valP
+        if self.stat == 1:
+            self.pc = valP
 
     # ==================== 成员C负责：其他指令 ====================
     def exec_halt(self):
